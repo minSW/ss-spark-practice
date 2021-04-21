@@ -1,2 +1,13 @@
 *.class
 *.log
+
+# Idea
+.idea/
+.gradle/
+build/
+
+# Git Credentials
+.git-credentials
+
+# .DS_Store
+.DS_Store
