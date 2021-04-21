@@ -1,0 +1,15 @@
+group 'com.sw.test'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'scala'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.spark:spark-core_2.12:2.4.7'
+    implementation 'org.apache.spark:spark-sql_2.12:2.4.7'
+    implementation 'org.scala-lang:scala-library:2.12.13'
+    testImplementation 'junit:junit:4.13'
+}
