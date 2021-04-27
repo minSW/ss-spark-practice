@@ -12,7 +12,7 @@ object PracticeApp {
   // "gender", "race/ethnicity", "parental level of education", "lunch", "test preparation course", "math score", "reading score", "writing score")
   val groups: Seq[String] = Seq("GENDER", "RACE_ETHNICITY", "PARENTAL_L_OF_E", "LUNCH", "TEST_P_C")
   val scores: Seq[String] = Seq("math", "reading", "writing")
-  val target = "MATH"
+  val target = "math"
 
   def main(args: Array[String]): Unit = {
     val spark = SparkSession.builder().appName("Practice1 Application").getOrCreate()
@@ -22,14 +22,8 @@ object PracticeApp {
       .load(s"$home/$fileName")
       .toDF(groups ++ scores :_*)
 
-    val cube = df
-      .cube(convertToColumnSeq(groups) :_*)
-      .agg(grouping_id(), mean(target).as("MEAN"), variance(target).as("VARIANCE"))
-      .na.fill("ALL", groups)
-      .na.fill(0, Seq("VARIANCE")) // 표준 분산 (N=1) 인 경우 => 0
-
     // Q1
-    val q1 = getQ1Result(cube)
+    val q1 = getQ1Result(df)
     writeToCsv(q1, "q1")
 
     // Q2 (use Q1 Result)
@@ -40,10 +34,13 @@ object PracticeApp {
   }
 
   def getQ1Result(df: DataFrame): DataFrame = {
-    df.filter(col("grouping_id()") === 0)
-      .select(convertToColumnSeq(groups ++ Seq("MEAN", "VARIANCE")) :_*)
+    df.cube(convertToColumnSeq(groups) :_*)
+      .agg(mean(target).as("MEAN"), variance(target).as("VARIANCE"))
+      .na.fill("ALL", groups)
+      .na.fill(0, Seq("VARIANCE")) // 표준 분산 (N=1) 인 경우 => 0
       .sort(convertToColumnSeq(groups) :_*)
   }
+
   def getQ2Result(df: DataFrame): Map[String, DataFrame] = {
     groups.map(target =>
       target -> {
@@ -55,8 +52,8 @@ object PracticeApp {
   }
 
   def makeTargetGroupFilterExpr(targetName: String): Column = {
-    var filterExpr = col(targetName).isNotNull
-    groups.filterNot(str => str == target).foreach(str => filterExpr &&= col(str).isNull)
+    var filterExpr = col(targetName) =!= "ALL"
+    groups.filterNot(str => str == targetName).foreach(str => filterExpr &&= col(str) === "ALL")
     filterExpr
   }
 
@@ -72,4 +69,3 @@ object PracticeApp {
     colNames.map(it => col(it))
   }
 }
-
