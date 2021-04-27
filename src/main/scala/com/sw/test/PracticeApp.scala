@@ -6,46 +6,58 @@ import org.apache.spark.sql.functions._
 object PracticeApp {
 
   val home: String = "/root/p1"
-  val groups: List[String] = List("gender", "race/ethnicity", "parental level of education", "lunch", "test preparation course")
+  val fileName: String = "StudentsPerformance.csv"
+
+  // Original Columns
+  // "gender", "race/ethnicity", "parental level of education", "lunch", "test preparation course", "math score", "reading score", "writing score")
+  val groups: Seq[String] = Seq("GENDER", "RACE_ETHNICITY", "PARENTAL_L_OF_E", "LUNCH", "TEST_P_C")
+  val scores: Seq[String] = Seq("math", "reading", "writing")
+  val target = "MATH"
 
   def main(args: Array[String]): Unit = {
     val spark = SparkSession.builder().appName("Practice1 Application").getOrCreate()
-    val df = spark.read.format("csv").options(Map("header"->"true", "inferSchema"->"true")).load(s"$home/StudentsPerformance.csv")
-    val cube = df.cube("gender", "race/ethnicity", "parental level of education", "lunch", "test preparation course")
-      .agg(grouping_id(), mean("math score"), variance("math score"))
+    val df = spark.read
+      .format("csv")
+      .options(Map("header"->"true", "inferSchema"->"true"))
+      .load(s"$home/$fileName")
+      .toDF(groups ++ scores :_*)
+
+    val cube = df
+      .cube(convertToColumnSeq(groups) :_*)
+      .agg(grouping_id(), mean(target).as("MEAN"), variance(target).as("VARIANCE"))
+      .na.fill("ALL", groups)
+      .na.fill(0, Seq("VARIANCE")) // 표준 분산 (N=1) 인 경우 => 0
 
     // Q1
-    getQ1Result(spark, cube)
-    // Q2
-    getQ2Result(cube)
+    val q1 = getQ1Result(cube)
+    writeToCsv(q1, "q1")
+
+    // Q2 (use Q1 Result)
+    val q2 = getQ2Result(q1)
+    q2.foreach(x => writeToCsv(x._2, s"q2/${x._1}"))
 
     spark.stop()
   }
 
-  def getQ1Result(spark: SparkSession, df: DataFrame): Unit = {
-    import spark.implicits._
-    val res = df.filter($"grouping_id()" === 0)
-      .select(
-        $"gender", $"race/ethnicity", $"parental level of education", $"lunch", $"test preparation course",
-        $"avg(math score)".as("mean"),
-        $"var_samp(math score)".as("variance")
-      )
-      .sort("gender", "race/ethnicity", "parental level of education", "lunch", "test preparation course")
-
-    writeToCsv(res, "q1")
+  def getQ1Result(df: DataFrame): DataFrame = {
+    df.filter(col("grouping_id()") === 0)
+      .select(convertToColumnSeq(groups ++ Seq("MEAN", "VARIANCE")) :_*)
+      .sort(convertToColumnSeq(groups) :_*)
+  }
+  def getQ2Result(df: DataFrame): Map[String, DataFrame] = {
+    groups.map(target =>
+      target -> {
+        df.filter(makeTargetGroupFilterExpr(target))
+          .select(target, "MEAN")
+          .sort(target)
+      }
+    ).toMap
   }
 
-  def getQ2Result(df: DataFrame): Unit = {
-    groups.foreach { target =>
-      var filterExpr = col(target).isNotNull
-      groups.filterNot(str => str == target).foreach(str => filterExpr &&= col(str).isNull)
-
-      val res = df.filter(filterExpr)
-        .select(col(target), col("avg(math score)").as("mean"))
-        .sort(target)
-
-      writeToCsv(res, s"q2/${target.replace("/", "_")}")
-    }
+  def makeTargetGroupFilterExpr(targetName: String): Column = {
+    var filterExpr = col(targetName).isNotNull
+    groups.filterNot(str => str == target).foreach(str => filterExpr &&= col(str).isNull)
+    filterExpr
   }
 
   def writeToCsv(df: DataFrame, name: String): Unit = {
@@ -55,4 +67,9 @@ object PracticeApp {
       .option("header", "true")
       .save(s"$home/$name.csv")
   }
+
+  def convertToColumnSeq(colNames: Seq[String]): Seq[Column] = {
+    colNames.map(it => col(it))
+  }
 }
+
